@@ -1,0 +1,1272 @@
+import React from "react";
+
+export default function DataRow({ label, value, highlight, danger, indent }) {
+  const valueColor = danger ? "text-[#ff4d4d]" : "text-[#ffffff]";
+  return (
+    <div className={`flex justify-between items-center py-1.5 border-b border-[#2a2a2a]/50 last:border-0 ${indent ? "pl-3" : ""}`}>
+      <span className="font-mono text-[11px] text-[#808080]">{label}</span>
+      <span className={`font-mono text-[11px] font-semibold ${valueColor}`}>{value}</span>
+    </div>
+  );
+}
+
+import React from "react";
+
+export default function Footer() {
+  return (
+    <div className="border-t border-[#2a2a2a] bg-[#0d0d0d]/95 backdrop-blur-sm px-4 md:px-6 py-3 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-4">
+        <span className="font-heading text-[10px] text-[#808080] tracking-wider uppercase">
+          © {new Date().getFullYear()} Mtshali Sport
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-[9px] text-[#808080]">Secure TLS 1.3</span>
+      </div>
+    </div>
+  );
+}
+
+import React from "react";
+
+export default function MetricCard({ label, value, subLabel, positive, negative, large }) {
+  const color = negative ? "text-[#ff4d4d]" : "text-[#ffffff]";
+  return (
+    <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3 md:p-4 relative overflow-hidden group hover:border-[#3a3a3a] transition-colors">
+      <p className="font-mono text-[10px] text-[#808080] uppercase tracking-wider mb-1">{label}</p>
+      <p className={`font-mono ${large ? "text-lg md:text-xl" : "text-sm md:text-base"} font-bold ${color} tracking-tight`}>
+        {value}
+      </p>
+      {subLabel && (
+        <p className="font-mono text-[10px] text-[#808080] mt-1">{subLabel}</p>
+      )}
+      <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${negative ? "bg-[#ff4d4d]/30" : "bg-[#2a2a2a]"}`} />
+    </div>
+  );
+}
+
+import React from "react";
+
+export default function SectionCard({ title, children, className = "" }) {
+  return (
+    <div className={`bg-[#161616] border border-[#2a2a2a] rounded-md overflow-hidden ${className}`}>
+      {title && (
+        <div className="px-4 py-2.5 border-b border-[#2a2a2a] bg-[#0d0d0d]/50">
+          <h3 className="font-heading text-xs font-semibold text-[#808080] uppercase tracking-wider">{title}</h3>
+        </div>
+      )}
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+import React, { useState } from "react";
+import { CLUBS, formatCurrency, formatPercent, formatRatio, computeMetrics } from "@/lib/terminalData";
+
+const METRICS = [
+  { key: "revenue", label: "Revenue", format: (v, cur) => formatCurrency(v, cur, true), higher: true },
+  { key: "wages", label: "Wage Bill", format: (v, cur) => formatCurrency(v, cur, true), higher: false },
+  { key: "wageRatio", label: "Wage Ratio", format: (v) => formatPercent(v), higher: false },
+  { key: "profitLoss", label: "Profit / Loss", format: (v, cur) => formatCurrency(v, cur, true), higher: true },
+  { key: "netDebt", label: "Net Debt", format: (v, cur) => formatCurrency(v, cur, true), higher: false },
+  { key: "netAssets", label: "Net Assets", format: (v, cur) => formatCurrency(v, cur, true), higher: true },
+  { key: "marketValue", label: "Squad Market Value", format: (v, cur) => formatCurrency(v, cur, true), higher: true },
+  { key: "squadEfficiency", label: "Squad Efficiency", format: (v) => formatRatio(v), higher: true },
+  { key: "enterpriseValue", label: "Enterprise Value", format: (v, cur) => formatCurrency(v, cur, true), higher: true },
+];
+
+const COMPUTED_METRICS = [
+  { key: "ltv", label: "Loan-to-Value", format: (v) => formatPercent(v), higher: false },
+  { key: "evRev", label: "EV / Revenue", format: (v) => formatRatio(v) + "x", higher: true },
+  { key: "icr", label: "Interest Coverage", format: (v) => v > 100 ? "N/A" : formatRatio(v) + "x", higher: true },
+  { key: "liquidityBuffer", label: "Liquidity Buffer", format: (v) => v > 100 ? "N/A" : formatRatio(v) + "x", higher: true },
+  { key: "commercialDebtExposure", label: "Comm. Debt Exposure", format: (v) => formatPercent(v), higher: false },
+];
+
+function rankValues(clubs, key, computed, currency) {
+  const values = clubs.map((club) => {
+    const val = computed
+      ? computeMetrics(club, currency)[key]
+      : club.current[key];
+    return { id: club.id, val };
+  });
+  const sorted = [...values].sort((a, b) => b.val - a.val);
+  const ranks = {};
+  values.forEach(({ id, val }) => {
+    ranks[id] = sorted.findIndex((s) => s.id === id) + 1;
+  });
+  return { ranks, values };
+}
+
+function getRankColor(rank, total, higher) {
+  const pct = higher ? (rank - 1) / (total - 1) : (total - rank) / (total - 1);
+  if (pct <= 0.25) return "text-[#ffffff]";
+  if (pct <= 0.5) return "text-[#cccccc]";
+  if (pct <= 0.75) return "text-yellow-400";
+  return "text-[#ff4d4d]";
+}
+
+export default function TabComparison({ currency }) {
+  const [sort, setSort] = useState({ key: "revenue", computed: false, dir: -1 });
+
+  const sorted = [...CLUBS].sort((a, b) => {
+    const av = sort.computed ? computeMetrics(a, currency)[sort.key] : a.current[sort.key];
+    const bv = sort.computed ? computeMetrics(b, currency)[sort.key] : b.current[sort.key];
+    return sort.dir * (bv - av);
+  });
+
+  const handleSort = (key, computed) => {
+    setSort((prev) =>
+      prev.key === key ? { key, computed, dir: prev.dir * -1 } : { key, computed, dir: -1 }
+    );
+  };
+
+  const total = CLUBS.length;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-heading text-sm font-semibold text-[#ffffff]">League-Wide Comparative Rankings</h3>
+          <p className="font-mono text-[10px] text-[#808080] mt-0.5">Click any column header to sort · Color = rank position</p>
+        </div>
+        <div className="hidden sm:flex gap-3 font-mono text-[10px]">
+          <span className="text-[#ffffff]">● Top quartile</span>
+          <span className="text-yellow-400">● Bottom half</span>
+          <span className="text-[#ff4d4d]">● Bottom quartile</span>
+        </div>
+      </div>
+
+      {/* Core Metrics Table */}
+      <div className="bg-[#161616] border border-[#2a2a2a] rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-[#2a2a2a] bg-[#0d0d0d]/50">
+          <h4 className="font-mono text-[10px] text-[#808080] uppercase tracking-wider">Core Financial Metrics</h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2 px-3 uppercase sticky left-0 bg-[#161616] z-10 min-w-[140px]">Club</th>
+                {METRICS.map((m) => (
+                  <th
+                    key={m.key}
+                    onClick={() => handleSort(m.key, false)}
+                    className={`font-mono text-[10px] text-right py-2 px-3 uppercase cursor-pointer select-none whitespace-nowrap transition-colors ${
+                      sort.key === m.key && !sort.computed ? "text-[#ffffff]" : "text-[#808080] hover:text-[#ffffff]"
+                    }`}
+                  >
+                    {m.label} {sort.key === m.key && !sort.computed ? (sort.dir === -1 ? "↓" : "↑") : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((club) => (
+                <tr key={club.id} className="border-b border-[#2a2a2a]/30 hover:bg-[#1a1a1a]/60 transition-colors">
+                  <td className="py-2 px-3 sticky left-0 bg-[#161616] z-10">
+                    <div>
+                      <p className="font-mono text-[11px] text-[#ffffff] font-semibold whitespace-nowrap">{club.name}</p>
+                      <p className="font-mono text-[9px] text-[#808080]">{club.league}</p>
+                    </div>
+                  </td>
+                  {METRICS.map((m) => {
+                    const val = club.current[m.key];
+                    const { ranks } = rankValues(CLUBS, m.key, false, currency);
+                    const color = getRankColor(ranks[club.id], total, m.higher);
+                    return (
+                      <td key={m.key} className={`font-mono text-[11px] text-right py-2 px-3 ${color}`}>
+                        {m.format(val, currency)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Computed / Ratio Metrics Table */}
+      <div className="bg-[#161616] border border-[#2a2a2a] rounded-md overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-[#2a2a2a] bg-[#0d0d0d]/50">
+          <h4 className="font-mono text-[10px] text-[#808080] uppercase tracking-wider">Derived Ratios & Solvency</h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2 px-3 uppercase sticky left-0 bg-[#161616] z-10 min-w-[140px]">Club</th>
+                {COMPUTED_METRICS.map((m) => (
+                  <th
+                    key={m.key}
+                    onClick={() => handleSort(m.key, true)}
+                    className={`font-mono text-[10px] text-right py-2 px-3 uppercase cursor-pointer select-none whitespace-nowrap transition-colors ${
+                      sort.key === m.key && sort.computed ? "text-[#ffffff]" : "text-[#808080] hover:text-[#ffffff]"
+                    }`}
+                  >
+                    {m.label} {sort.key === m.key && sort.computed ? (sort.dir === -1 ? "↓" : "↑") : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((club) => {
+                const cm = computeMetrics(club, currency);
+                return (
+                  <tr key={club.id} className="border-b border-[#2a2a2a]/30 hover:bg-[#1a1a1a]/60 transition-colors">
+                    <td className="py-2 px-3 sticky left-0 bg-[#161616] z-10">
+                      <p className="font-mono text-[11px] text-[#ffffff] font-semibold whitespace-nowrap">{club.name}</p>
+                    </td>
+                    {COMPUTED_METRICS.map((m) => {
+                      const val = cm[m.key];
+                      const { ranks } = rankValues(CLUBS, m.key, true, currency);
+                      const color = getRankColor(ranks[club.id], total, m.higher);
+                      return (
+                        <td key={m.key} className={`font-mono text-[11px] text-right py-2 px-3 ${color}`}>
+                          {m.format(val, currency)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+import React from "react";
+import SectionCard from "./SectionCard";
+import DataRow from "./DataRow";
+import { formatCurrency, formatPercent, computeMetrics } from "@/lib/terminalData";
+
+export default function TabCreditRisk({ club, currency }) {
+  const m = computeMetrics(club, currency);
+  const hd = club.creditRisk.hardDebt[0] || {};
+  const td = club.creditRisk.tradeDebt[0] || {};
+  const sd = club.creditRisk.softDebt[0] || {};
+  const col = club.creditRisk.collateral[0] || {};
+  const noData = !club.creditRisk.hardDebt.length;
+
+  if (noData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="font-mono text-sm text-[#808080]">No credit risk data available for this club.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">True Adjusted Debt</p>
+          <p className={`font-mono text-base font-bold ${m.trueAdjustedDebt > 0 ? "text-[#ff4d4d]" : "text-[#ffffff]"}`}>
+            {formatCurrency(m.trueAdjustedDebt, currency, true)}
+          </p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">Loan-to-Value (LTV)</p>
+          <p className={`font-mono text-base font-bold ${m.ltv > 0.8 ? "text-[#ff4d4d]" : m.ltv > 0.5 ? "text-yellow-400" : "text-[#ffffff]"}`}>
+            {formatPercent(m.ltv)}
+          </p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">Commercial Debt Exposure</p>
+          <p className={`font-mono text-base font-bold ${m.commercialDebtExposure > 1 ? "text-[#ff4d4d]" : "text-[#ffffff]"}`}>
+            {formatPercent(m.commercialDebtExposure)}
+          </p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">Roster Liquidity Buffer</p>
+          <p className={`font-mono text-base font-bold ${m.liquidityBuffer < 1 ? "text-[#ff4d4d]" : "text-[#ffffff]"}`}>
+            {m.liquidityBuffer > 100 ? "N/A" : m.liquidityBuffer.toFixed(2) + "x"}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Hard Financial Debt */}
+        <SectionCard title="Hard Financial Debt (Commercial Levers)">
+          <DataRow label="Bank Loans & Overdrafts (< 12 mos)" value={formatCurrency(hd.bankLoansShort, currency)} danger={hd.bankLoansShort > 0} />
+          <DataRow label="Bank Loans & Overdrafts (> 12 mos)" value={formatCurrency(hd.bankLoansLong, currency)} danger={hd.bankLoansLong > 0} />
+          <DataRow label="Factored Loans & Receivables (< 12 mos)" value={formatCurrency(hd.factoredShort, currency)} />
+          <DataRow label="Factored Loans & Receivables (> 12 mos)" value={formatCurrency(hd.factoredLong, currency)} />
+          <div className="mt-2 pt-2 border-t border-[#2a2a2a]">
+            <DataRow label="Total Hard Financial Debt" value={formatCurrency(m.totalHardDebt, currency)} danger />
+          </div>
+        </SectionCard>
+
+        {/* Trade & Football Debt */}
+        <SectionCard title="Trade & Football Debt (Industry Levers)">
+          <DataRow label="Short-Term Transfer Payables (< 12 mos)" value={formatCurrency(td.transferPayablesShort, currency)} danger={td.transferPayablesShort > 0} />
+          <DataRow label="Long-Term Transfer Payables" value={formatCurrency(td.transferPayablesLong, currency)} />
+          <div className="mt-3 pt-2 border-t border-[#ff4d4d]/30">
+            <DataRow
+              label="⚠ Contingent Off-Balance Sheet Liabilities"
+              value={formatCurrency(td.contingent, currency)}
+              danger
+            />
+            <p className="font-mono text-[9px] text-[#ff4d4d]/70 mt-1 italic">
+              Undisclosed contractual performance bonuses, sell-on clauses, and conditional add-ons per audited footnotes
+            </p>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#2a2a2a]">
+            <DataRow label="Total Trade Debt" value={formatCurrency(m.totalTransferDebt, currency)} danger />
+          </div>
+        </SectionCard>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Insulated Debt */}
+        <SectionCard title="Insulated Debt (Soft Layer)">
+          <DataRow label="Amounts Owed to Shareholders" value={formatCurrency(sd.shareholderLoans, currency)} />
+          <p className="font-mono text-[9px] text-[#808080] mt-2 italic">
+            Subordinated, non-commercial debt typically with no fixed repayment schedule or commercial interest rate.
+          </p>
+        </SectionCard>
+
+        {/* Core Collateral */}
+        <SectionCard title="Core Collateral Counterweights">
+          <DataRow label="Cash & Cash Equivalents" value={formatCurrency(col.cash, currency)} highlight />
+          <DataRow label="Short-Term Transfer Receivables" value={formatCurrency(col.transferReceivablesShort, currency)} highlight />
+          <DataRow label="Long-Term Transfer Receivables" value={formatCurrency(col.transferReceivablesLong, currency)} />
+          <DataRow label="Roster Market Value (Transfermarkt)" value={formatCurrency(col.rosterValue, currency)} highlight />
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+import React, { useState, useMemo } from "react";
+import { CLUBS, formatCurrency, formatPercent, formatRatio, computeMetrics } from "@/lib/terminalData";
+
+const PEER_METRICS = [
+  { key: "revenue", label: "Revenue", format: (v, cur) => formatCurrency(v, cur, true), computed: false, higher: true },
+  { key: "wages", label: "Wage Bill", format: (v, cur) => formatCurrency(v, cur, true), computed: false, higher: false },
+  { key: "wageRatio", label: "Wage Ratio", format: (v) => formatPercent(v), computed: false, higher: false },
+  { key: "profitLoss", label: "P / L", format: (v, cur) => formatCurrency(v, cur, true), computed: false, higher: true },
+  { key: "marketValue", label: "Squad MV", format: (v, cur) => formatCurrency(v, cur, true), computed: false, higher: true },
+  { key: "enterpriseValue", label: "Equity Value", format: (v, cur) => formatCurrency(v, cur, true), computed: false, higher: true },
+  { key: "ev", label: "Enterprise Value", format: (v, cur) => formatCurrency(v, cur, true), computed: true, higher: true },
+  { key: "evRev", label: "EV / Revenue", format: (v) => formatRatio(v) + "x", computed: true, higher: true },
+  { key: "ebitda", label: "EBITDA", format: (v, cur) => formatCurrency(v, cur, true), computed: true, higher: true },
+  { key: "ebitdaMargin", label: "EBITDA Margin", format: (v) => formatPercent(v), computed: true, higher: true },
+  { key: "ltv", label: "Loan-to-Value", format: (v) => formatPercent(v), computed: true, higher: false },
+  { key: "icr", label: "Interest Coverage", format: (v) => (v > 100 ? "N/A" : formatRatio(v) + "x"), computed: true, higher: true },
+  { key: "dscr", label: "DSCR", format: (v) => (v > 100 ? "N/A" : formatRatio(v) + "x"), computed: true, higher: true },
+  { key: "uefaSquadCost", label: "UEFA Squad Cost", format: (v) => formatPercent(v), computed: true, higher: false },
+  { key: "commercialDebtExposure", label: "Comm. Debt Exposure", format: (v) => formatPercent(v), computed: true, higher: false },
+];
+
+function findClosestPeers(club, allClubs, n = 3) {
+  const sameLeague = allClubs.filter((x) => x.id !== club.id && x.league === club.league);
+  const byRev = [...sameLeague].sort(
+    (a, b) => Math.abs(a.current.revenue - club.current.revenue) - Math.abs(b.current.revenue - club.current.revenue)
+  );
+  if (byRev.length >= n) return byRev.slice(0, n).map((x) => x.id);
+  const others = allClubs
+    .filter((x) => x.id !== club.id && x.league !== club.league)
+    .sort((a, b) => Math.abs(a.current.revenue - club.current.revenue) - Math.abs(b.current.revenue - club.current.revenue));
+  return [...byRev, ...others].slice(0, n).map((x) => x.id);
+}
+
+function bestInRow(values, higher) {
+  if (!values.length) return -1;
+  let bestIdx = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (higher ? values[i] > values[bestIdx] : values[i] < values[bestIdx]) bestIdx = i;
+  }
+  return bestIdx;
+}
+
+export default function TabPeerCompare({ club, currency }) {
+  const [selected, setSelected] = useState(() => findClosestPeers(club, CLUBS, 3));
+
+  const peerIds = useMemo(() => findClosestPeers(club, CLUBS, 3), [club.id]);
+  const clubs = useMemo(() => {
+    const ids = [club.id, ...selected.filter((id) => id !== club.id)];
+    const unique = [...new Set(ids)];
+    return unique.map((id) => CLUBS.find((x) => x.id === id)).filter(Boolean);
+  }, [club.id, selected]);
+
+  const toggleClub = (id) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const autoClosest = () => setSelected(peerIds);
+
+  const getVal = (c, metric) => {
+    if (metric.computed) return computeMetrics(c, currency)[metric.key];
+    return c.current[metric.key];
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h3 className="font-heading text-sm font-semibold text-[#ffffff]">Peer Comparison — Side by Side</h3>
+          <p className="font-mono text-[10px] text-[#808080] mt-0.5">
+            {club.name} is pinned · add clubs to compare · best value per row highlighted
+          </p>
+        </div>
+        <button
+          onClick={autoClosest}
+          className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 rounded border border-[#2a2a2a] text-[#cccccc] hover:border-[#ffffff] hover:text-[#ffffff] transition-colors whitespace-nowrap"
+        >
+          Auto: Closest Peers
+        </button>
+      </div>
+
+      {/* Club Picker */}
+      <div className="bg-[#161616] border border-[#2a2a2a] rounded-md p-3">
+        <p className="font-mono text-[10px] text-[#808080] uppercase tracking-wider mb-2">Select Clubs</p>
+        <div className="flex flex-wrap gap-2">
+          {CLUBS.map((x) => {
+            const active = x.id === club.id;
+            const checked = active || selected.includes(x.id);
+            return (
+              <button
+                key={x.id}
+                onClick={() => !active && toggleClub(x.id)}
+                disabled={active}
+                className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors ${
+                  active
+                    ? "border-[#ffffff] text-[#ffffff] bg-[#ffffff]/10 cursor-default"
+                    : checked
+                    ? "border-[#cccccc] text-[#ffffff] bg-[#1a1a1a]"
+                    : "border-[#2a2a2a] text-[#808080] hover:text-[#ffffff] hover:border-[#cccccc]"
+                }`}
+              >
+                {x.name}{active ? " ★" : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Comparison Table */}
+      <div className="bg-[#161616] border border-[#2a2a2a] rounded-md overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2.5 px-3 uppercase sticky left-0 bg-[#161616] z-10 min-w-[160px]">Metric</th>
+                {clubs.map((x) => (
+                  <th key={x.id} className={`font-mono text-[10px] text-right py-2.5 px-3 uppercase min-w-[120px] ${x.id === club.id ? "text-[#ffffff]" : "text-[#808080]"}`}>
+                    {x.name}
+                    <span className="block font-mono text-[8px] normal-case text-[#555] mt-0.5">{x.league}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PEER_METRICS.map((metric) => {
+                const values = clubs.map((x) => getVal(x, metric));
+                const bestIdx = bestInRow(values, metric.higher);
+                return (
+                  <tr key={metric.key} className="border-b border-[#2a2a2a]/30 hover:bg-[#1a1a1a]/40 transition-colors">
+                    <td className="font-mono text-[10px] text-[#808080] py-2 px-3 uppercase sticky left-0 bg-[#161616] z-10">{metric.label}</td>
+                    {clubs.map((x, i) => {
+                      const val = values[i];
+                      const isBest = i === bestIdx && clubs.length > 1;
+                      const isPinned = x.id === club.id;
+                      return (
+                        <td key={x.id} className={`font-mono text-[11px] text-right py-2 px-3 ${isBest ? "text-[#ffffff] font-bold" : isPinned ? "text-[#ffffff]" : "text-[#cccccc]"}`}>
+                          {metric.format(val, currency)}
+                          {isBest && clubs.length > 1 && <span className="text-[8px] ml-1 text-[#ffffff]">●</span>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 font-mono text-[9px] text-[#808080]">
+        <span className="text-[#ffffff]">●</span> best in row
+        <span className="text-[#ffffff]">★</span> pinned club
+      </div>
+    </div>
+  );
+}
+
+import React, { useState, useMemo } from "react";
+import SectionCard from "./SectionCard";
+import MetricCard from "./MetricCard";
+import { formatCurrency, formatRatio, formatPercent, computeMetrics } from "@/lib/terminalData";
+
+const REV_SCENARIOS = [-20, -10, 0, 10, 20];
+const WAGE_SCENARIOS = [-15, -7.5, 0, 7.5, 15];
+
+export default function TabSensitivity({ club, currency }) {
+  const [revShock, setRevShock] = useState(0);
+  const [wageShock, setWageShock] = useState(0);
+  const [cellMetric, setCellMetric] = useState("equity");
+
+  const m = computeMetrics(club, currency);
+  const c = club.current;
+
+  const stressed = useMemo(() => {
+    const deltaEbitda = c.revenue * (revShock / 100) - c.wages * (wageShock / 100);
+    const sEbitda = m.ebitda + deltaEbitda;
+    const sRev = c.revenue * (1 + revShock / 100);
+    const sEbitdaMargin = sRev ? sEbitda / sRev : 0;
+    const sEquity = m.equityValue + deltaEbitda * m.evEbitda;
+    const sIcr = m.grossInterest > 0 ? sEbitda / m.grossInterest : 999;
+    const sOperatingMargin = sRev && m.playerAmortisation !== null ? (sEbitda - m.playerAmortisation) / sRev : 0;
+    return { sRev, sEbitda, sEbitdaMargin, sEquity, sIcr, sOperatingMargin };
+  }, [revShock, wageShock, m, c]);
+
+  const matrix = useMemo(() => {
+    return REV_SCENARIOS.map((rs) =>
+      WAGE_SCENARIOS.map((ws) => {
+        const deltaEbitda = c.revenue * (rs / 100) - c.wages * (ws / 100);
+        const sEbitda = m.ebitda + deltaEbitda;
+        const sRev = c.revenue * (1 + rs / 100);
+        if (cellMetric === "equity") return m.equityValue + deltaEbitda * m.evEbitda;
+        return sRev ? sEbitda / sRev : 0;
+      })
+    );
+  }, [cellMetric, m, c]);
+
+  const fmtCell = (val) => {
+    if (cellMetric === "equity") return formatCurrency(val, currency, true);
+    return formatPercent(val);
+  };
+
+  const cellColor = (val) => {
+    if (cellMetric === "equity") return val >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]";
+    return val >= 0.1 ? "text-[#ffffff]" : val >= 0 ? "text-[#cccccc]" : "text-[#ff4d4d]";
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Shock Controls */}
+      <SectionCard title="Margin Sensitivity — Revenue & Wage Shock">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-[#808080]">Revenue Shock</span>
+              <span className={`font-mono text-base font-bold ${revShock < 0 ? "text-[#ff4d4d]" : revShock > 0 ? "text-[#ffffff]" : "text-[#cccccc]"}`}>
+                {revShock > 0 ? "+" : ""}{revShock}%
+              </span>
+            </div>
+            <input
+              type="range" min="-30" max="30" value={revShock}
+              onChange={(e) => setRevShock(Number(e.target.value))}
+              className="w-full h-1.5 bg-[#2a2a2a] rounded-lg appearance-none cursor-pointer accent-[#ffffff]"
+            />
+            <div className="flex justify-between font-mono text-[9px] text-[#808080]">
+              <span>-30%</span><span>0%</span><span>+30%</span>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-xs text-[#808080]">Wage Shock</span>
+              <span className={`font-mono text-base font-bold ${wageShock > 0 ? "text-[#ff4d4d]" : wageShock < 0 ? "text-[#ffffff]" : "text-[#cccccc]"}`}>
+                {wageShock > 0 ? "+" : ""}{wageShock}%
+              </span>
+            </div>
+            <input
+              type="range" min="-20" max="20" value={wageShock}
+              onChange={(e) => setWageShock(Number(e.target.value))}
+              className="w-full h-1.5 bg-[#2a2a2a] rounded-lg appearance-none cursor-pointer accent-[#ffffff]"
+            />
+            <div className="flex justify-between font-mono text-[9px] text-[#808080]">
+              <span>-20%</span><span>0%</span><span>+20%</span>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Stressed Results */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="Stressed EBITDA" value={formatCurrency(stressed.sEbitda, currency, true)} positive={stressed.sEbitda > 0} negative={stressed.sEbitda < 0} />
+        <MetricCard label="EBITDA Margin" value={formatPercent(stressed.sEbitdaMargin)} positive={stressed.sEbitdaMargin > 0.1} negative={stressed.sEbitdaMargin < 0} />
+        <MetricCard label="Stressed Equity Value" value={formatCurrency(stressed.sEquity, currency, true)} positive={stressed.sEquity > 0} negative={stressed.sEquity < 0} />
+        <MetricCard label="Stressed ICR" value={stressed.sIcr > 100 ? "N/A" : formatRatio(stressed.sIcr) + "x"} positive={stressed.sIcr > 3} negative={stressed.sIcr < 1.5 && stressed.sIcr < 100} />
+      </div>
+
+      {/* Base vs Stressed */}
+      <SectionCard title="Base vs Stressed — Margin Impact">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2 px-3 uppercase">Metric</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-3 uppercase">Base</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-3 uppercase">Stressed</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-3 uppercase">Δ</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono text-[11px]">
+              <SensRow label="Revenue" base={formatCurrency(c.revenue, currency, true)} stressed={formatCurrency(stressed.sRev, currency, true)} />
+              <SensRow label="EBITDA" base={formatCurrency(m.ebitda, currency, true)} stressed={formatCurrency(stressed.sEbitda, currency, true)} />
+              <SensRow label="EBITDA Margin" base={formatPercent(m.ebitdaMargin)} stressed={formatPercent(stressed.sEbitdaMargin)} pct />
+              <SensRow label="Equity Value" base={formatCurrency(m.equityValue, currency, true)} stressed={formatCurrency(stressed.sEquity, currency, true)} />
+              <SensRow label="ICR" base={m.icr > 100 ? "N/A" : formatRatio(m.icr) + "x"} stressed={stressed.sIcr > 100 ? "N/A" : formatRatio(stressed.sIcr) + "x"} />
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 pt-2 border-t border-[#2a2a2a]">
+          <p className="font-mono text-[9px] text-[#808080] italic">
+            ΔEquity = ΔEBITDA × base EV/EBITDA multiple. EBITDA = EBIT + Player Amortisation (filed accounts). Amortisation & other costs held constant.
+          </p>
+        </div>
+      </SectionCard>
+
+      {/* Two-way Sensitivity Matrix */}
+      <SectionCard title="Two-Way Sensitivity Matrix">
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-mono text-[10px] text-[#808080]">Rows: Revenue shock · Columns: Wage shock</p>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setCellMetric("equity")}
+              className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors ${cellMetric === "equity" ? "border-[#ffffff] text-[#ffffff] bg-[#ffffff]/10" : "border-[#2a2a2a] text-[#808080] hover:text-[#ffffff]"}`}
+            >Equity Value</button>
+            <button
+              onClick={() => setCellMetric("margin")}
+              className={`font-mono text-[10px] px-2.5 py-1 rounded border transition-colors ${cellMetric === "margin" ? "border-[#ffffff] text-[#ffffff] bg-[#ffffff]/10" : "border-[#2a2a2a] text-[#808080] hover:text-[#ffffff]"}`}
+            >EBITDA Margin</button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2 px-2 uppercase sticky left-0 bg-[#161616]">Rev \ Wage</th>
+                {WAGE_SCENARIOS.map((ws) => (
+                  <th key={ws} className={`font-mono text-[10px] text-right py-2 px-2 uppercase ${ws === 0 ? "text-[#ffffff]" : ws > 0 ? "text-[#ff4d4d]" : "text-[#cccccc]"}`}>
+                    {ws > 0 ? "+" : ""}{ws}%
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {REV_SCENARIOS.map((rs, i) => (
+                <tr key={rs} className={`border-b border-[#2a2a2a]/30 ${rs === 0 ? "bg-[#ffffff]/5" : ""}`}>
+                  <td className={`font-mono text-[10px] py-2 px-2 uppercase sticky left-0 bg-[#161616] ${rs === 0 ? "text-[#ffffff]" : rs < 0 ? "text-[#cccccc]" : "text-[#ff4d4d]"}`}>
+                    {rs > 0 ? "+" : ""}{rs}%
+                  </td>
+                  {WAGE_SCENARIOS.map((ws, j) => {
+                    const isBase = rs === 0 && ws === 0;
+                    return (
+                      <td key={ws} className={`font-mono text-[11px] text-right py-2 px-2 ${cellColor(matrix[i][j])} ${isBase ? "border border-[#ffffff]/30 bg-[#ffffff]/5" : ""}`}>
+                        {fmtCell(matrix[i][j])}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2">
+          <p className="font-mono text-[9px] text-[#808080] italic">
+            Highlighted cell = base case (0% / 0%). Each cell shows the modelled {cellMetric === "equity" ? "equity value" : "EBITDA margin"} at that revenue/wage combination.
+          </p>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+function SensRow({ label, base, stressed, pct }) {
+  const baseNum = parseFloat(base.replace(/[^0-9.\-]/g, ""));
+  const stressedNum = parseFloat(stressed.replace(/[^0-9.\-]/g, ""));
+  const delta = isNaN(baseNum) || isNaN(stressedNum) ? "—" : stressedNum - baseNum;
+  const deltaStr = pct
+    ? (delta >= 0 ? "+" : "") + delta.toFixed(1) + "pp"
+    : (delta >= 0 ? "+" : "") + Math.abs(delta).toFixed(0);
+  return (
+    <tr className="border-b border-[#2a2a2a]/30">
+      <td className="text-[#808080] py-2 px-3">{label}</td>
+      <td className="text-right py-2 px-3 text-[#cccccc]">{base}</td>
+      <td className="text-right py-2 px-3 text-[#ffffff]">{stressed}</td>
+      <td className={`text-right py-2 px-3 ${delta >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>{deltaStr}</td>
+    </tr>
+  );
+}
+
+import React, { useState, useMemo } from "react";
+import SectionCard from "./SectionCard";
+import DataRow from "./DataRow";
+import MetricCard from "./MetricCard";
+import { formatCurrency, formatPercent, computeMetrics } from "@/lib/terminalData";
+
+export default function TabStressTest({ club, currency }) {
+  const [shockPct, setShockPct] = useState(0);
+  const c = club.current;
+  const m = computeMetrics(club, currency);
+
+  const stress = useMemo(() => {
+    const broadcastWeight = m.broadcastPct || 0.55;
+    const broadcastRevenue = c.revenue * broadcastWeight;
+    const otherRevenue = c.revenue * (1 - broadcastWeight);
+    const shockFactor = shockPct / 100;
+
+    const stressedBroadcast = broadcastRevenue * (1 - shockFactor);
+    const stressedRevenue = otherRevenue + stressedBroadcast;
+    const revenueLoss = c.revenue - stressedRevenue;
+
+    const wageCushion = shockFactor > 0.2 ? c.wages * 0.15 : c.wages * shockFactor * 0.5;
+    const stressedWages = c.wages - wageCushion;
+
+    const stressedPL = stressedRevenue - stressedWages - (c.revenue - c.wages - c.profitLoss);
+    const operatingCashShortfall = Math.max(0, -stressedPL);
+
+    const stressedEbitda = stressedPL + Math.abs(stressedWages * 0.15);
+    const interestExpense = m.grossInterest > 0 ? m.grossInterest : m.totalHardDebt * 0.065;
+    const principalRepayment = m.principalRepayments > 0 ? m.principalRepayments : m.totalHardDebt * 0.1;
+    const stressedDSCR = (interestExpense + principalRepayment) > 0
+      ? stressedEbitda / (interestExpense + principalRepayment)
+      : 999;
+
+    let covenantStatus = "SECURE";
+    let covenantColor = "text-[#ffffff]";
+    if (stressedDSCR < 2 && stressedDSCR > 1.2) {
+      covenantStatus = "MARGINAL";
+      covenantColor = "text-yellow-400";
+    } else if (stressedDSCR <= 1.2 && stressedDSCR > 0.8) {
+      covenantStatus = "VULNERABLE";
+      covenantColor = "text-orange-400";
+    } else if (stressedDSCR <= 0.8) {
+      covenantStatus = "CRITICAL BREACH";
+      covenantColor = "text-[#ff4d4d]";
+    }
+
+    const transactionDiscount = 0.30;
+    const requiredLiquidation = operatingCashShortfall > 0
+      ? operatingCashShortfall / (1 - transactionDiscount)
+      : 0;
+    const rosterPctToSell = c.marketValue > 0 ? requiredLiquidation / c.marketValue : 0;
+
+    return {
+      stressedRevenue,
+      revenueLoss,
+      stressedWages,
+      wageCushion,
+      stressedPL,
+      stressedDSCR,
+      covenantStatus,
+      covenantColor,
+      operatingCashShortfall,
+      requiredLiquidation,
+      rosterPctToSell,
+      stressedEbitda,
+    };
+  }, [shockPct, club, currency]);
+
+  return (
+    <div className="space-y-4">
+      {/* Slider Control */}
+      <SectionCard title="Relegation Broadcast Shock Simulator">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs text-[#808080]">Broadcast Revenue Shock</span>
+            <span className={`font-mono text-lg font-bold ${shockPct > 30 ? "text-[#ff4d4d]" : shockPct > 15 ? "text-yellow-400" : "text-[#ffffff]"}`}>
+              {shockPct}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="50"
+            value={shockPct}
+            onChange={(e) => setShockPct(Number(e.target.value))}
+            className="w-full h-1.5 bg-[#2a2a2a] rounded-lg appearance-none cursor-pointer accent-[#ffffff]"
+            style={{
+              background: `linear-gradient(to right, ${shockPct > 30 ? "#ff4d4d" : shockPct > 15 ? "#e0a800" : "#ffffff"} 0%, ${shockPct > 30 ? "#ff4d4d" : shockPct > 15 ? "#e0a800" : "#ffffff"} ${shockPct * 2}%, #2a2a2a ${shockPct * 2}%)`,
+            }}
+          />
+          <div className="flex justify-between font-mono text-[9px] text-[#808080]">
+            <span>0% — No Shock</span>
+            <span>25% — Moderate</span>
+            <span>50% — Severe</span>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Covenant Status Badge */}
+      <div className={`border rounded-md p-4 text-center ${
+        stress.covenantStatus === "CRITICAL BREACH" ? "border-[#ff4d4d]/50 bg-[#ff4d4d]/5" :
+        stress.covenantStatus === "VULNERABLE" ? "border-orange-400/50 bg-orange-400/5" :
+        stress.covenantStatus === "MARGINAL" ? "border-yellow-400/50 bg-yellow-400/5" :
+        "border-[#ffffff]/20 bg-[#ffffff]/5"
+      }`}>
+        <p className="font-mono text-[10px] text-[#808080] uppercase tracking-widest mb-1">Covenant Compliance Status</p>
+        <p className={`font-mono text-2xl font-bold tracking-wider ${stress.covenantColor}`}>
+          {stress.covenantStatus}
+        </p>
+        <p className="font-mono text-[10px] text-[#808080] mt-1">
+          Stressed DSCR: {stress.stressedDSCR > 100 ? "N/A" : stress.stressedDSCR.toFixed(2) + "x"}
+        </p>
+      </div>
+
+      {/* Results Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard
+          label="Stressed Revenue"
+          value={formatCurrency(stress.stressedRevenue, currency, true)}
+          negative={stress.revenueLoss > 0}
+        />
+        <MetricCard
+          label="Revenue Loss"
+          value={formatCurrency(stress.revenueLoss, currency, true)}
+          negative
+        />
+        <MetricCard
+          label="Stressed P/L"
+          value={formatCurrency(stress.stressedPL, currency, true)}
+          positive={stress.stressedPL > 0}
+          negative={stress.stressedPL < 0}
+        />
+        <MetricCard
+          label="Cash Shortfall"
+          value={formatCurrency(stress.operatingCashShortfall, currency, true)}
+          negative={stress.operatingCashShortfall > 0}
+          positive={stress.operatingCashShortfall === 0}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <SectionCard title="Stressed Financial Profile">
+          <DataRow label="Base Revenue" value={formatCurrency(c.revenue, currency)} />
+          <DataRow label="Stressed Revenue" value={formatCurrency(stress.stressedRevenue, currency)} danger={stress.revenueLoss > 0} />
+          <DataRow label="Revenue Reduction" value={formatCurrency(stress.revenueLoss, currency)} danger />
+          <DataRow label="Base Wages" value={formatCurrency(c.wages, currency)} />
+          <DataRow label="Post-Relegation Wages (cushion)" value={formatCurrency(stress.stressedWages, currency)} highlight />
+          <DataRow label="Wage Drop Cushion" value={formatCurrency(stress.wageCushion, currency)} highlight />
+          <DataRow label="Stressed Profit / Loss" value={formatCurrency(stress.stressedPL, currency)} highlight={stress.stressedPL > 0} danger={stress.stressedPL < 0} />
+        </SectionCard>
+
+        <SectionCard title="Required Roster Liquidation">
+          <DataRow label="Operating Cash Shortfall" value={formatCurrency(stress.operatingCashShortfall, currency)} danger={stress.operatingCashShortfall > 0} />
+          <DataRow label="Transaction Discount Applied" value="30%" />
+          <DataRow
+            label="Required Player Sales (Gross)"
+            value={formatCurrency(stress.requiredLiquidation, currency)}
+            danger={stress.requiredLiquidation > 0}
+          />
+          <DataRow
+            label="% of Roster to Liquidate"
+            value={formatPercent(stress.rosterPctToSell)}
+            danger={stress.rosterPctToSell > 0.3}
+            highlight={stress.rosterPctToSell === 0}
+          />
+          <DataRow label="Current Roster Value" value={formatCurrency(c.marketValue, currency)} highlight />
+          <div className="mt-3 pt-2 border-t border-[#2a2a2a]">
+            <p className="font-mono text-[9px] text-[#808080] italic">
+              Liquidation assumes 30% distressed-sale discount to Transfermarkt valuations, consistent with forced mid-window transactions.
+            </p>
+          </div>
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+import React, { useState } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import SectionCard from "./SectionCard";
+import { GBP_TO_USD } from "@/lib/terminalData";
+
+const SERIES = [
+  { key: "Revenue", color: "#ffffff", label: "Revenue" },
+  { key: "Wages", color: "#ff4d4d", label: "Wages" },
+  { key: "Net Debt", color: "#e0a800", label: "Net Debt" },
+  { key: "P/L", color: "#999999", label: "P/L", dashed: true },
+  { key: "Market Value", color: "#666666", label: "Market Value" },
+];
+
+export default function TabTimeSeries({ club, currency }) {
+  const [visible, setVisible] = useState(["Revenue"]);
+
+  if (!club.historical.length) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="font-mono text-sm text-[#808080]">No historical data available for this club.</p>
+      </div>
+    );
+  }
+
+  const multiplier = currency === "USD" ? GBP_TO_USD : 1;
+  const symbol = currency === "USD" ? "$" : "£";
+
+  const chartData = [...club.historical]
+    .sort((a, b) => a.year - b.year)
+    .map((h) => ({
+      year: h.year,
+      Revenue: Math.round((h.revenue * multiplier) / 1e6),
+      Wages: Math.round((h.wages * multiplier) / 1e6),
+      "Net Debt": Math.round((h.netDebt * multiplier) / 1e6),
+      "P/L": Math.round((h.profitLoss * multiplier) / 1e6),
+      "Market Value": Math.round((h.marketValue * multiplier) / 1e6),
+    }));
+
+  const formatTick = (value) => `${symbol}${value}m`;
+
+  const toggleSeries = (key) => {
+    setVisible((prev) => {
+      if (prev.includes(key)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((k) => k !== key);
+      }
+      return [...prev, key];
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Series Toggle */}
+      <div className="flex flex-wrap gap-2">
+        {SERIES.map((s) => {
+          const isVisible = visible.includes(s.key);
+          return (
+            <button
+              key={s.key}
+              onClick={() => toggleSeries(s.key)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded border font-mono text-[11px] transition-all ${
+                isVisible
+                  ? "border-[#3a3a3a] bg-[#1a1a1a] text-[#ffffff]"
+                  : "border-[#2a2a2a] bg-transparent text-[#808080] hover:text-[#ffffff]"
+              }`}
+            >
+              <div
+                className={`w-3 h-3 rounded-sm border flex items-center justify-center ${
+                  isVisible ? "border-[#ffffff] bg-[#ffffff]" : "border-[#808080]"
+                }`}
+              >
+                {isVisible && (
+                  <svg className="w-2 h-2 text-[#0d0d0d]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <SectionCard title={`${club.name} — 5-Year Longitudinal Series (${symbol} millions)`}>
+        <div className="h-[350px] md:h-[420px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+              <XAxis
+                dataKey="year"
+                stroke="#808080"
+                tick={{ fill: "#808080", fontSize: 11, fontFamily: "JetBrains Mono" }}
+              />
+              <YAxis
+                stroke="#808080"
+                tick={{ fill: "#808080", fontSize: 10, fontFamily: "JetBrains Mono" }}
+                tickFormatter={formatTick}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#161616",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: "4px",
+                  fontFamily: "JetBrains Mono",
+                  fontSize: "11px",
+                }}
+                labelStyle={{ color: "#ffffff" }}
+                formatter={(value, name) => [`${symbol}${value}m`, name]}
+              />
+              <Legend wrapperStyle={{ fontFamily: "JetBrains Mono", fontSize: "10px" }} />
+              {SERIES.filter((s) => visible.includes(s.key)).map((s) => (
+                <Line
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  stroke={s.color}
+                  strokeWidth={2}
+                  strokeDasharray={s.dashed ? "5 5" : undefined}
+                  dot={{ fill: s.color, r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </SectionCard>
+
+      {/* Historical data table */}
+      <SectionCard title="Historical Data Grid">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#2a2a2a]">
+                <th className="font-mono text-[10px] text-[#808080] text-left py-2 px-2 uppercase">Year</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">Revenue</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">Wages</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">Net Debt</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">P/L</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">MV</th>
+                <th className="font-mono text-[10px] text-[#808080] text-right py-2 px-2 uppercase">Eff.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {club.historical.map((h) => (
+                <tr key={h.year} className="border-b border-[#2a2a2a]/30 hover:bg-[#1a1a1a]/50">
+                  <td className="font-mono text-[11px] text-[#ffffff] py-1.5 px-2">{h.year}</td>
+                  <td className="font-mono text-[11px] text-[#ffffff] text-right py-1.5 px-2">{symbol}{(h.revenue * multiplier / 1e6).toFixed(1)}m</td>
+                  <td className="font-mono text-[11px] text-[#ff4d4d] text-right py-1.5 px-2">{symbol}{(h.wages * multiplier / 1e6).toFixed(1)}m</td>
+                  <td className="font-mono text-[11px] text-[#e0a800] text-right py-1.5 px-2">{symbol}{(h.netDebt * multiplier / 1e6).toFixed(1)}m</td>
+                  <td className={`font-mono text-[11px] text-right py-1.5 px-2 ${h.profitLoss >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>
+                    {symbol}{(h.profitLoss * multiplier / 1e6).toFixed(1)}m
+                  </td>
+                  <td className="font-mono text-[11px] text-[#999999] text-right py-1.5 px-2">{symbol}{(h.marketValue * multiplier / 1e6).toFixed(1)}m</td>
+                  <td className="font-mono text-[11px] text-[#808080] text-right py-1.5 px-2">{h.efficiency.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+import React from "react";
+import SectionCard from "./SectionCard";
+import DataRow from "./DataRow";
+import { formatCurrency, formatRatio, formatPercent, computeMetrics } from "@/lib/terminalData";
+
+export default function TabTrading({ club, currency }) {
+  const m = computeMetrics(club, currency);
+  const c = club.current;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">EV / Revenue</p>
+          <p className={`font-mono text-base font-bold ${m.evRev >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>{formatRatio(m.evRev)}x</p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">EV / EBITDA</p>
+          <p className={`font-mono text-base font-bold ${m.evEbitda >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>{formatRatio(m.evEbitda)}x</p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">Loan-to-Value</p>
+          <p className={`font-mono text-base font-bold ${m.ltv > 1 ? "text-[#ff4d4d]" : "text-[#ffffff]"}`}>{formatPercent(m.ltv)}</p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-3">
+          <p className="font-mono text-[10px] text-[#808080] uppercase mb-1">Interest Coverage</p>
+          <p className={`font-mono text-base font-bold ${m.icr < 1.5 ? "text-[#ff4d4d]" : m.icr < 3 ? "text-yellow-400" : "text-[#ffffff]"}`}>
+            {m.icr > 100 ? "N/A" : formatRatio(m.icr) + "x"}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Valuation Ratios */}
+        <SectionCard title="Valuation Ratios">
+          <DataRow label="EV / Revenue" value={formatRatio(m.evRev) + "x"} highlight={m.evRev > 0} danger={m.evRev < 0} />
+          <DataRow label="EV / EBITDA (est.)" value={formatRatio(m.evEbitda) + "x"} />
+          <DataRow label="Net Debt / Revenue" value={formatRatio(m.netDebtRev) + "x"} danger={m.netDebtRev > 2} />
+          <DataRow label="Revenue" value={formatCurrency(c.revenue, currency, true)} />
+          <DataRow label="EBITDA (est.)" value={formatCurrency(m.ebitda, currency, true)} highlight={m.ebitda > 0} danger={m.ebitda < 0} />
+        </SectionCard>
+
+        {/* Asset-Backed Solvency */}
+        <SectionCard title="Asset-Backed Solvency">
+          <DataRow label="Loan-to-Value (LTV)" value={formatPercent(m.ltv)} danger={m.ltv > 0.8} highlight={m.ltv < 0.5} />
+          <DataRow label="Acid Test Ratio" value={formatRatio(m.acidTest > 100 ? 0 : m.acidTest)} highlight={m.acidTest > 1} danger={m.acidTest < 0.8} />
+          <DataRow label="Trading Velocity Index" value={formatRatio(m.tradingVelocity)} />
+          <DataRow label="True Adjusted Debt" value={formatCurrency(m.trueAdjustedDebt, currency, true)} danger />
+          <DataRow label="Roster Collateral Value" value={formatCurrency(c.marketValue, currency, true)} highlight />
+        </SectionCard>
+
+        {/* Credit Coverage */}
+        <SectionCard title="Credit Coverage Metrics">
+          <DataRow
+            label="Interest Coverage (ICR)"
+            value={m.icr > 100 ? "N/A (no debt)" : formatRatio(m.icr) + "x"}
+            highlight={m.icr > 3}
+            danger={m.icr < 1.5 && m.icr < 100}
+          />
+          <DataRow
+            label="Debt Service Coverage (DSCR)"
+            value={m.dscr > 100 ? "N/A (no debt)" : formatRatio(m.dscr) + "x"}
+            highlight={m.dscr > 1.5}
+            danger={m.dscr < 1 && m.dscr < 100}
+          />
+          <DataRow label="UEFA Squad Cost Ratio" value={formatPercent(m.uefaSquadCost)} danger={m.uefaSquadCost > 0.7} highlight={m.uefaSquadCost < 0.6} />
+          <DataRow label="Wage-to-Revenue" value={formatPercent(c.wageRatio)} danger={c.wageRatio > 1} />
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+import React from "react";
+import SectionCard from "./SectionCard";
+import DataRow from "./DataRow";
+import MetricCard from "./MetricCard";
+import { formatCurrency, formatRatio, formatPercent, computeMetrics } from "@/lib/terminalData";
+
+export default function TabValuation({ club, currency }) {
+  const m = computeMetrics(club, currency);
+  const c = club.current;
+
+  return (
+    <div className="space-y-4">
+      {/* Top KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard
+          label="Enterprise Value"
+          value={formatCurrency(m.ev, currency, true)}
+          positive={m.ev > 0}
+          negative={m.ev < 0}
+          large
+        />
+        <MetricCard
+          label="Equity Value"
+          value={formatCurrency(m.equityValue, currency, true)}
+          positive={m.equityValue > 0}
+          negative={m.equityValue < 0}
+          large
+        />
+        <MetricCard
+          label="Squad MV"
+          value={formatCurrency(c.marketValue, currency, true)}
+          positive
+        />
+        <MetricCard
+          label="EV/Revenue"
+          value={formatRatio(m.evRev) + "x"}
+          positive={m.evRev > 0}
+          negative={m.evRev < 0}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Base Weight Matrix */}
+        <SectionCard title="Base Weight Matrix — Turnover vs Net Assets">
+          <DataRow label="Revenue" value={formatCurrency(c.revenue, currency)} highlight />
+          <DataRow label="Net Assets" value={formatCurrency(c.netAssets, currency)} highlight={c.netAssets > 0} danger={c.netAssets < 0} />
+          <DataRow label="Revenue + Net Assets" value={formatCurrency(c.revenue + c.netAssets, currency)} />
+          <DataRow label="Net Profit / Loss" value={formatCurrency(c.profitLoss, currency)} highlight={c.profitLoss > 0} danger={c.profitLoss < 0} />
+          <DataRow label="Profitability Factor (1 + P/L÷Rev)" value={formatRatio(1 + (c.profitLoss / c.revenue))} />
+          <DataRow label="Net Debt" value={formatCurrency(c.netDebt, currency)} danger={c.netDebt > 0} />
+        </SectionCard>
+
+        {/* Human Capital Multipliers */}
+        <SectionCard title="Human Capital Multipliers">
+          <DataRow label="Squad Efficiency Ratio" value={formatRatio(c.squadEfficiency)} highlight />
+          <DataRow label="Wage-to-Turnover Ratio" value={formatPercent(c.wageRatio)} danger={c.wageRatio > 1} highlight={c.wageRatio <= 0.7} />
+          <DataRow label="Squad Market Value" value={formatCurrency(c.marketValue, currency)} />
+          <DataRow label="Annual Wage Bill" value={formatCurrency(c.wages, currency)} />
+          <DataRow label="Sourcing Multiplier (MV / Wages)" value={formatRatio(c.marketValue / c.wages)} highlight />
+        </SectionCard>
+      </div>
+
+      {/* Acquisition Valuation Bridge */}
+      <SectionCard title="Acquisition Valuation Bridge">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-4 text-center">
+            <p className="font-mono text-[10px] text-[#808080] uppercase tracking-wider mb-2">Enterprise Value</p>
+            <p className={`font-mono text-xl font-bold ${m.ev >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>
+              {formatCurrency(m.ev, currency, true)}
+            </p>
+          </div>
+          <div className="flex items-center justify-center">
+            <div className="text-center">
+              <p className="font-mono text-lg text-[#808080]">−</p>
+              <p className="font-mono text-[10px] text-[#808080] uppercase">True Adjusted Debt</p>
+              <p className="font-mono text-sm font-semibold text-[#ff4d4d]">{formatCurrency(m.trueAdjustedDebt, currency, true)}</p>
+            </div>
+          </div>
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded p-4 text-center">
+            <p className="font-mono text-[10px] text-[#808080] uppercase tracking-wider mb-2">Equity Value</p>
+            <p className={`font-mono text-xl font-bold ${m.equityValue >= 0 ? "text-[#ffffff]" : "text-[#ff4d4d]"}`}>
+              {formatCurrency(m.equityValue, currency, true)}
+            </p>
+          </div>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+import React from "react";
+import { Search, ChevronDown } from "lucide-react";
+
+export default function TopBar({ clubs, selectedClubId, onSelectClub, currency, onToggleCurrency }) {
+  return (
+    <div className="border-b border-[#2a2a2a] bg-[#0d0d0d]/95 backdrop-blur-sm sticky top-0 z-50">
+      <div className="flex items-center justify-between px-4 md:px-6 h-14">
+        {/* Title */}
+        <div className="flex flex-col justify-center">
+          <h1 className="font-heading font-extrabold text-[#ffffff] text-sm md:text-base tracking-tight whitespace-nowrap leading-tight">
+            THE MTSHALI TERMINAL
+          </h1>
+          <span className="font-mono text-[8px] text-[#c9a961] tracking-wider uppercase whitespace-nowrap leading-tight">
+            Powered by Mtshali Sport
+          </span>
+        </div>
+
+        {/* Command Box */}
+        <div className="flex-1 max-w-md mx-4 hidden md:block">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#808080]" />
+            <select
+              value={selectedClubId}
+              onChange={(e) => onSelectClub(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ffffff] font-mono text-xs pl-9 pr-8 py-2 rounded appearance-none focus:outline-none focus:border-[#808080] transition-colors cursor-pointer"
+            >
+              {clubs.map((club) => (
+                <option key={club.id} value={club.id} className="bg-[#161616]">
+                  {club.name} — {club.league}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#808080] pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Currency Toggle */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onToggleCurrency}
+            className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#808080] px-3 py-1.5 rounded transition-all"
+          >
+            <span className="font-mono text-xs font-semibold text-[#ffffff]">
+              {currency === "GBP" ? "£ GBP" : "$ USD"}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile selector */}
+      <div className="md:hidden px-4 pb-3">
+        <select
+          value={selectedClubId}
+          onChange={(e) => onSelectClub(e.target.value)}
+          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#ffffff] font-mono text-xs px-3 py-2 rounded appearance-none focus:outline-none focus:border-[#808080]"
+        >
+          {clubs.map((club) => (
+            <option key={club.id} value={club.id} className="bg-[#161616]">
+              {club.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
